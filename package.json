@@ -1,0 +1,13 @@
+{
+  "name": "ordivia",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter @ordivia/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:db": "./scripts/db-test.sh",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm --filter @ordivia/web lint"
+  }
+}

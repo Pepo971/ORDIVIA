@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night: #0e2235;
+  --color-night-2: #17344f;
+  --color-night-3: #24496b;
+  --color-teal: #15a596;
+  --color-teal-deep: #0c7d72;
+  --color-teal-soft: #dcf3ef;
+  --color-warm: #faf6ef;
+  --color-sand: #f0e8db;
+  --color-sand-deep: #e2d6c3;
+  --color-ink: #12202d;
+  --color-muted: #5a6a79;
+  --color-danger: #b4401b;
+  --color-danger-soft: #fbe7df;
+  --color-warn: #a66a0f;
+  --color-warn-soft: #fbf0d9;
+  --color-ok: #1f7a46;
+  --color-ok-soft: #e1f2e7;
+
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, serif;
+
+  --radius-card: 1.1rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--color-warm);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+/* Bersagli touch ampi per chi lavora con guanti, mani bagnate o al sole */
+button,
+[role="button"],
+input,
+select,
+textarea {
+  min-height: 2.75rem;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px; /* evita lo zoom automatico su iOS */
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-teal);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
