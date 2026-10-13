@@ -55,7 +55,8 @@ create table public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   full_name   text,
   email       text,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 -- Catalogo dei permessi: è codice, non dato del cliente.
@@ -336,8 +337,12 @@ begin
   return new;
 end $$;
 
-create trigger on_auth_user_created after insert on auth.users
-  for each row execute function app.handle_new_user();
+do $$ begin
+  create trigger on_auth_user_created after insert on auth.users
+    for each row execute function app.handle_new_user();
+exception when insufficient_privilege then
+  raise warning 'Impossibile creare il trigger su auth.users: i profili vengono creati al primo accesso';
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Ruoli di sistema

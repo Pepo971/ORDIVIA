@@ -164,20 +164,7 @@ create table public.supplier_price_history (
 );
 create index on public.supplier_price_history (supplier_product_id, observed_at desc);
 
-create or replace function app.track_list_price() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  if tg_op = 'INSERT' or new.price is distinct from old.price then
-    insert into public.supplier_price_history (org_id, supplier_product_id, price, source)
-    values (new.org_id, new.id, new.price, 'listino');
-    new.updated_at := now();
-  end if;
-  return new;
-end $$;
-create trigger supplier_products_price before insert or update of price on public.supplier_products
-  for each row execute function app.track_list_price();
--- La storia si scrive dopo che la riga esiste: per gli insert usiamo un trigger AFTER dedicato.
-drop trigger supplier_products_price on public.supplier_products;
+-- Ogni prezzo di listino (nuovo o modificato) viene storicizzato.
 create or replace function app.track_list_price_after() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
