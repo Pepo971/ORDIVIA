@@ -11,6 +11,7 @@ export default async function ServizioLayout({ children }: { children: React.Rea
     can(ctx, "pos.operate", "pos.supervise") && { href: "/servizio/cassa", label: "Cassa" },
     can(ctx, "beach.operate", "beach.manage") && { href: "/servizio/spiaggia", label: "Spiaggia" },
     can(ctx, "menu.manage") && { href: "/servizio/menu", label: "Menu e ricette" },
+    can(ctx, "haccp.record", "pos.kitchen") && !can(ctx, "menu.manage") && { href: "/servizio/menu/haccp", label: "HACCP" },
   ].filter(Boolean) as { href: string; label: string }[];
   return (
     <div>

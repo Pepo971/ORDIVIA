@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { deadlineUrgency, rankToday, todayScore, type TodayItem } from "@ordivia/domain";
+import { deadlineUrgency, rankToday, todayScore, zonedTimeToUtc, type TodayItem } from "@ordivia/domain";
 import { Badge, Card, cx, EmptyState, Notice } from "@/components/ui";
 import { can, getContext } from "@/lib/context";
 import { formatDate, formatTime, relativeFromNow } from "@/lib/format";
@@ -18,6 +18,8 @@ const KIND_LABEL: Record<TodayItem["kind"], string> = {
   attivita_scaduta: "In ritardo",
   attivita_oggi: "Attività",
   attivita_da_verificare: "Verifica",
+  haccp: "HACCP",
+  richiesta_personale: "Personale",
 };
 
 export default async function OggiPage({ searchParams }: { searchParams: Promise<{ benvenuto?: string; negato?: string }> }) {
@@ -140,6 +142,54 @@ export default async function OggiPage({ searchParams }: { searchParams: Promise
     for (const t of team.filter((t) => t.status !== "completata" && t.due_at && new Date(t.due_at) < now)) {
       items.push({ id: `tl-${t.id}`, kind: "attivita_scaduta", title: t.title, detail: "Non ancora completata dal collega", deadline: new Date(t.due_at!), href: "/lavoro?vista=team" });
     }
+  }
+
+  // --- HACCP: temperature non ancora registrate oggi, etichette in scadenza entro 24 h ---
+  if (can(ctx, "haccp.record")) {
+    const dayStart = zonedTimeToUtc(...(todayStr.split("-").map(Number) as [number, number, number]), 0, 0, tz).toISOString();
+    const [{ data: equipment }, { data: logs }, { data: labels }] = await Promise.all([
+      supabase.from("haccp_equipment").select("id, name").eq("facility_id", ctx.facility.id).eq("active", true),
+      supabase.from("haccp_temperature_logs").select("equipment_id, out_of_range").eq("facility_id", ctx.facility.id).gte("recorded_at", dayStart),
+      supabase
+        .from("haccp_labels")
+        .select("id, name, expires_at")
+        .eq("facility_id", ctx.facility.id)
+        .eq("status", "attiva")
+        .lte("expires_at", new Date(now.getTime() + 24 * 3600_000).toISOString())
+        .order("expires_at"),
+    ]);
+    const done = new Set((logs ?? []).map((l) => l.equipment_id));
+    const missing = (equipment ?? []).filter((e) => !done.has(e.id));
+    if (missing.length > 0) {
+      items.push({ id: "haccp-temp", kind: "haccp", title: `Temperature da registrare: ${missing.length}`, detail: missing.slice(0, 4).map((e) => e.name).join(", "), href: "/servizio/menu/haccp/temperature", weight: missing.length });
+    }
+    const outOfRange = (logs ?? []).filter((l) => l.out_of_range).length;
+    if (outOfRange > 0) {
+      items.push({ id: "haccp-out", kind: "haccp", title: `${outOfRange} temperature fuori limite oggi`, detail: "Verifica l’azione correttiva", href: "/servizio/menu/haccp/temperature", weight: 10 });
+    }
+    for (const l of (labels ?? []) as { id: string; name: string; expires_at: string }[]) {
+      const exp = new Date(l.expires_at);
+      items.push({ id: `lbl-${l.id}`, kind: "haccp", title: exp < now ? `Scaduto: ${l.name}` : `In scadenza: ${l.name}`, detail: "Consuma o scarta e aggiorna l’etichetta", deadline: exp, href: `/servizio/menu/haccp/etichette/${l.id}` });
+    }
+  }
+
+  // --- Personale: ferie e cambi turno ---
+  if (can(ctx, "shifts.manage")) {
+    const [{ count: leaves }, { count: swaps }] = await Promise.all([
+      supabase.from("leave_requests").select("id", { count: "exact", head: true }).eq("facility_id", ctx.facility.id).eq("status", "in_attesa"),
+      supabase.from("shift_swaps").select("id", { count: "exact", head: true }).eq("facility_id", ctx.facility.id).eq("status", "accettato"),
+    ]);
+    const n = (leaves ?? 0) + (swaps ?? 0);
+    if (n > 0) items.push({ id: "staff-req", kind: "richiesta_personale", title: `${n} richieste del personale da decidere`, detail: `${leaves ?? 0} assenze · ${swaps ?? 0} cambi turno`, href: "/lavoro/richieste" });
+  }
+  if (can(ctx, "shifts.view")) {
+    const { count: offered } = await supabase
+      .from("shift_swaps")
+      .select("id", { count: "exact", head: true })
+      .eq("facility_id", ctx.facility.id)
+      .eq("status", "offerto")
+      .eq("to_user", ctx.userId);
+    if ((offered ?? 0) > 0) items.push({ id: "swap-offer", kind: "richiesta_personale", title: `Un collega ti offre ${offered === 1 ? "un turno" : `${offered} turni`}`, href: "/lavoro/richieste" });
   }
 
   const ranked = rankToday(items, now);

@@ -9,7 +9,9 @@ export type TodayKind =
   | "sotto_scorta"
   | "attivita_scaduta"
   | "attivita_oggi"
-  | "attivita_da_verificare";
+  | "attivita_da_verificare"
+  | "haccp"                // temperature da registrare, etichette in scadenza
+  | "richiesta_personale"; // ferie e cambi turno da decidere o accettare
 
 export interface TodayItem {
   id: string;
@@ -32,6 +34,8 @@ const BASE: Record<TodayKind, number> = {
   attivita_da_verificare: 45,
   attivita_oggi: 40,
   sotto_scorta: 35,
+  haccp: 65,
+  richiesta_personale: 50,
 };
 
 export function todayScore(item: TodayItem, now: Date = new Date()): number {
