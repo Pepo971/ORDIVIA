@@ -46,7 +46,7 @@ export async function createTask(_: ActionState, data: FormData): Promise<Action
     created_by: ctx.userId,
   });
   if (error) return { error: humanError(error) };
-  revalidatePath("/lavoro");
+  revalidatePath("/lavoro/attivita");
   revalidatePath("/oggi");
   return { ok: true, message: "Attività assegnata." };
 }
@@ -78,7 +78,7 @@ export async function advanceTask(_: ActionState, data: FormData): Promise<Actio
   const note = ((data.get("note") as string) || "").trim() || null;
   const { error } = await supabase.rpc("task_transition", { p_task: id.data, p_to: to.data, p_note: note, p_photo: photoPath });
   if (error) return { error: humanError(error) };
-  revalidatePath("/lavoro");
+  revalidatePath("/lavoro/attivita");
   revalidatePath("/oggi");
   const msg = { iniziata: "Attività iniziata.", completata: "Ottimo, attività completata.", verificata: "Attività verificata.", annullata: "Attività annullata." }[to.data];
   return { ok: true, message: msg };
@@ -90,6 +90,6 @@ export async function rejectTask(_: ActionState, data: FormData): Promise<Action
   const supabase = await createClient();
   const { error } = await supabase.rpc("task_transition", { p_task: id.data, p_to: "iniziata", p_note: ((data.get("note") as string) || "").trim() || "Da rifare" });
   if (error) return { error: humanError(error) };
-  revalidatePath("/lavoro");
+  revalidatePath("/lavoro/attivita");
   return { ok: true, message: "Rimandata al collega." };
 }

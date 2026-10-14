@@ -96,6 +96,9 @@ describe("Oggi", () => {
 
 describe("navigazione per ruolo", () => {
   it("un collaboratore vede solo Oggi, Lavoro e Scorte", () => {
-    expect(navFor(["tasks.perform", "inventory.view"]).map((n) => n.key)).toEqual(["oggi", "lavoro", "scorte"]);
+    expect(navFor(["tasks.perform", "inventory.view", "shifts.view"]).map((n) => n.key)).toEqual(["oggi", "lavoro", "scorte"]);
+  });
+  it("un cameriere vede il Servizio", () => {
+    expect(navFor(["tasks.perform", "pos.operate", "shifts.view"]).map((n) => n.key)).toEqual(["oggi", "servizio", "lavoro"]);
   });
 });

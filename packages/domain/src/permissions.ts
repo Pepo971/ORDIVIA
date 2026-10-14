@@ -18,6 +18,15 @@ export const PERMISSIONS = [
   "inventory.move",
   "inventory.count",
   "stations.manage",
+  "menu.manage",
+  "pos.operate",
+  "pos.kitchen",
+  "pos.supervise",
+  "beach.operate",
+  "beach.manage",
+  "shifts.manage",
+  "shifts.view",
+  "haccp.record",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -29,10 +38,11 @@ export interface NavItem {
   anyOf: Permission[];
 }
 
-/** Navigazione per ruolo: massimo cinque voci, generate dai permessi. */
+/** Navigazione per ruolo, generata dai permessi: un operativo vede 3–4 voci, il titolare tutte. */
 export const NAV: NavItem[] = [
   { key: "oggi", label: "Oggi", href: "/oggi", anyOf: ["tasks.perform", "tasks.manage", "purchasing.approve", "receiving.perform"] },
-  { key: "lavoro", label: "Lavoro", href: "/lavoro", anyOf: ["tasks.perform", "tasks.manage"] },
+  { key: "servizio", label: "Servizio", href: "/servizio", anyOf: ["pos.operate", "pos.kitchen", "pos.supervise", "beach.operate", "beach.manage", "menu.manage"] },
+  { key: "lavoro", label: "Lavoro", href: "/lavoro", anyOf: ["tasks.perform", "tasks.manage", "shifts.view", "shifts.manage"] },
   { key: "acquisti", label: "Acquisti", href: "/acquisti", anyOf: ["purchasing.request", "purchasing.approve", "suppliers.manage", "receiving.perform"] },
   { key: "scorte", label: "Scorte", href: "/scorte", anyOf: ["inventory.view"] },
   { key: "gestione", label: "Gestione", href: "/gestione", anyOf: ["org.manage", "members.manage", "audit.view"] },
