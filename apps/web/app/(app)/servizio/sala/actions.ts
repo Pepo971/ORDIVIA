@@ -154,3 +154,33 @@ export async function serveLines(_: ActionState, data: FormData): Promise<Action
   revalidatePath("/servizio", "layout");
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Ordini degli ospiti dal portale QR
+// ---------------------------------------------------------------------------
+export async function acceptPortalSubmission(_: ActionState, data: FormData): Promise<ActionState> {
+  const id = uuid.safeParse(data.get("submission_id"));
+  const order = uuid.safeParse(data.get("order_id"));
+  if (!id.success || !order.success) return { error: "Ordine non valido" };
+  const supabase = await createClient();
+  const { data: n, error } = await supabase.rpc("portal_accept_submission", { p_submission: id.data });
+  if (error) return { error: humanError(error) };
+  revalidatePath("/servizio", "layout");
+  return { ok: true, message: n === 1 ? "Accettato: 1 riga inviata in produzione." : `Accettato: ${n} righe inviate in produzione.` };
+}
+
+const rejectSchema = z.object({
+  submission_id: uuid,
+  order_id: uuid,
+  reason: z.string().trim().min(3, "Indica il motivo del rifiuto").max(300, "Motivo troppo lungo (massimo 300 caratteri)"),
+});
+
+export async function rejectPortalSubmission(_: ActionState, data: FormData): Promise<ActionState> {
+  const parsed = rejectSchema.safeParse(Object.fromEntries(data));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("portal_reject_submission", { p_submission: parsed.data.submission_id, p_reason: parsed.data.reason });
+  if (error) return { error: humanError(error) };
+  revalidatePath("/servizio", "layout");
+  return { ok: true, message: "Ordine online rifiutato: porzioni restituite." };
+}

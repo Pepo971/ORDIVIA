@@ -5,15 +5,15 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { Badge, Card, CardHeader, Field, Input, LinkButton, Notice, PageHeader, Select, cx } from "@/components/ui";
 import { can, requirePerm } from "@/lib/context";
 import { formatEur, formatTime } from "@/lib/format";
-import { PAYMENT_METHOD_LABEL, getOpenCashSession, getOrder, getOrderLines } from "@/lib/pos-queries";
+import { PAYMENT_METHOD_LABEL, getOpenCashSession, getOrder, getOrderLines, isConfirmed } from "@/lib/pos-queries";
 import { createClient } from "@/lib/supabase/server";
-import { closeOrder, markFiscalized, setDiscount, voidLine } from "../actions";
+import { closeOrder, linkCustomer, markFiscalized, setDiscount, voidLine } from "../actions";
 import { PaymentPanel } from "./payment-panel";
 
 export const metadata = { title: "Conto" };
 export const dynamic = "force-dynamic";
 
-export default async function ContoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ chiusa?: string }> }) {
+export default async function ContoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ chiusa?: string; cliente?: string }> }) {
   const { id } = await params;
   const sp = await searchParams;
   const ctx = await requirePerm("pos.operate", "pos.supervise");
@@ -21,13 +21,34 @@ export default async function ContoPage({ params, searchParams }: { params: Prom
   if (!order) notFound();
   const tz = ctx.facility.timezone;
   const supabase = await createClient();
-  const [lines, paysRes, session] = await Promise.all([
+  const canCustomers = can(ctx, "crm.view", "crm.manage", "reservations.manage", "rooms.manage", "beach.operate", "beach.manage");
+  const q = (sp.cliente ?? "").trim().slice(0, 60);
+  // Caratteri speciali dei filtri PostgREST tolti dalla ricerca.
+  const qSafe = q.replace(/[%,()*\\"]/g, " ").trim();
+  const [allLines, paysRes, session, customerRes, matchesRes] = await Promise.all([
     getOrderLines([id]),
     supabase.from("pos_payments").select("id, method, amount, tendered, change_given, split_label, fiscal_status, created_at").eq("order_id", id).order("created_at"),
     getOpenCashSession(ctx.facility.id),
+    canCustomers && order.customer_id
+      ? supabase.from("customers").select("id, full_name, phone, email").eq("id", order.customer_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    canCustomers && qSafe.length >= 2
+      ? supabase
+          .from("customers")
+          .select("id, full_name, phone, email")
+          .eq("org_id", ctx.org.id)
+          .is("anonymized_at", null)
+          .or(`full_name.ilike.%${qSafe}%,phone.ilike.%${qSafe}%,email.ilike.%${qSafe}%`)
+          .order("full_name")
+          .limit(8)
+      : Promise.resolve({ data: [] }),
   ]);
+  const customer = customerRes.data as { id: string; full_name: string; phone: string | null; email: string | null } | null;
+  const matches = (matchesRes.data ?? []) as { id: string; full_name: string; phone: string | null; email: string | null }[];
+  const pendingLines = allLines.filter((l) => l.status === "da_confermare");
+  const lines = allLines.filter((l) => l.status !== "da_confermare");
   const payments = (paysRes.data ?? []).map((p) => ({ ...p, amount: Number(p.amount), change_given: Number(p.change_given) }));
-  const active = lines.filter((l) => l.status !== "annullata");
+  const active = lines.filter(isConfirmed);
   const totals = billTotals(
     active.map((l) => ({ unitPrice: l.unit_price, qty: l.qty, vatRate: l.vat_rate })),
     order.discount_kind ? { kind: order.discount_kind as "percentuale" | "importo", value: order.discount_value ?? 0 } : null,
@@ -40,12 +61,13 @@ export default async function ContoPage({ params, searchParams }: { params: Prom
 
   return (
     <div>
-      <LiveRefresh tables={["pos_orders", "pos_order_lines", "pos_payments"]} facilityId={ctx.facility.id} />
+      <LiveRefresh tables={["pos_orders", "pos_order_lines", "pos_payments", "portal_submissions"]} facilityId={ctx.facility.id} />
       <PageHeader
         title={`Conto · ${order.destination_label}`}
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             #{order.number} · aperta {formatTime(order.opened_at, tz)}
+            {order.source === "portale" && <Badge tone="teal">Online</Badge>}
             {order.covers > 0 && <> · {order.covers} coperti</>}
             {order.status === "chiusa" && <Badge tone="ok">Chiusa {formatTime(order.closed_at, tz)}</Badge>}
             {order.status === "annullata" && <Badge tone="danger">Annullata</Badge>}
@@ -59,6 +81,15 @@ export default async function ContoPage({ params, searchParams }: { params: Prom
         }
       />
       {sp.chiusa && <div className="mb-4"><Notice tone="ok">Conto chiuso. Ingredienti scaricati dal magazzino secondo le ricette.</Notice></div>}
+      {isOpen && pendingLines.length > 0 && (
+        <div className="mb-4">
+          <Notice tone="night">
+            {pendingLines.length === 1 ? "1 riga online da confermare" : `${pendingLines.length} righe online da confermare`} (
+            {formatEur(pendingLines.reduce((s, l) => s + l.unit_price * l.qty, 0))}, non ancora nel conto). Accettale o rifiutale dalla{" "}
+            <a href={`/servizio/sala/${order.id}`} className="underline">comanda</a> prima di chiudere.
+          </Notice>
+        </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
         <div>
@@ -161,13 +192,62 @@ export default async function ContoPage({ params, searchParams }: { params: Prom
               {!session && <p className="mt-2 text-xs text-muted">Contanti disattivati: nessun turno di cassa aperto.</p>}
             </Card>
           )}
-          {isOpen && operator && active.length > 0 && remaining === 0 && (
+          {isOpen && operator && active.length > 0 && remaining === 0 && pendingLines.length > 0 && (
+            <Card className="mb-4 p-4">
+              <p className="font-bold text-night">Conto saldato, ma ci sono righe online da confermare: la chiusura è bloccata.</p>
+            </Card>
+          )}
+          {isOpen && operator && active.length > 0 && remaining === 0 && pendingLines.length === 0 && (
             <Card className="mb-4 border-ok p-4">
               <p className="mb-3 font-bold text-ok">Conto saldato.</p>
               <ActionForm action={closeOrder}>
                 <input type="hidden" name="order_id" value={order.id} />
                 <SubmitButton full pendingText="Chiusura…" className="min-h-14 text-lg">Chiudi conto e libera il tavolo</SubmitButton>
               </ActionForm>
+            </Card>
+          )}
+
+          {canCustomers && order.status !== "annullata" && (operator || supervisor) && (
+            <Card className="mb-4">
+              <CardHeader title="Cliente" hint="Collega il conto alla scheda cliente: la spesa compare nel CRM." />
+              <div className="p-4">
+                {customer ? (
+                  <ActionForm action={linkCustomer} className="flex items-center justify-between gap-3">
+                    <input type="hidden" name="order_id" value={order.id} />
+                    <input type="hidden" name="customer_id" value="" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-night">{customer.full_name}</p>
+                      <p className="truncate text-xs text-muted">{[customer.phone, customer.email].filter(Boolean).join(" · ")}</p>
+                    </div>
+                    <SubmitButton variant="ghost" pendingText="…">Scollega</SubmitButton>
+                  </ActionForm>
+                ) : (
+                  <>
+                    <form method="get" className="flex gap-2">
+                      <Input name="cliente" defaultValue={q} placeholder="Nome, telefono o email" aria-label="Cerca cliente" minLength={2} maxLength={60} />
+                      <button type="submit" className="min-h-11 rounded-xl border border-sand-deep px-4 text-sm font-bold text-night">Cerca</button>
+                    </form>
+                    {q.length >= 2 && (
+                      <ul className="mt-3 divide-y divide-sand rounded-xl border border-sand-deep">
+                        {matches.length === 0 && <li className="px-3 py-3 text-sm text-muted">Nessun cliente trovato.</li>}
+                        {matches.map((c) => (
+                          <li key={c.id}>
+                            <ActionForm action={linkCustomer} className="flex items-center justify-between gap-3 px-3 py-2">
+                              <input type="hidden" name="order_id" value={order.id} />
+                              <input type="hidden" name="customer_id" value={c.id} />
+                              <div className="min-w-0">
+                                <p className="font-bold text-night">{c.full_name}</p>
+                                <p className="truncate text-xs text-muted">{[c.phone, c.email].filter(Boolean).join(" · ")}</p>
+                              </div>
+                              <SubmitButton variant="secondary" pendingText="…">Collega</SubmitButton>
+                            </ActionForm>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
             </Card>
           )}
 

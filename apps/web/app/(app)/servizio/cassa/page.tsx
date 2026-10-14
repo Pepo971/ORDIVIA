@@ -2,7 +2,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, Notice, PageHeader, Row } from "@/components/ui";
 import { can, requirePerm } from "@/lib/context";
 import { formatEur, formatTime } from "@/lib/format";
-import { getOpenCashSession, getOpenOrders } from "@/lib/pos-queries";
+import { getOpenCashSession, getOpenOrders, getPendingCounts } from "@/lib/pos-queries";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Cassa" };
@@ -12,7 +12,7 @@ export default async function CassaPage() {
   const ctx = await requirePerm("pos.operate", "pos.supervise");
   const tz = ctx.facility.timezone;
   const supabase = await createClient();
-  const [orders, session, closedRes] = await Promise.all([
+  const [orders, session, closedRes, pending] = await Promise.all([
     getOpenOrders(ctx.facility.id),
     getOpenCashSession(ctx.facility.id),
     supabase
@@ -22,6 +22,7 @@ export default async function CassaPage() {
       .eq("status", "chiusa")
       .order("closed_at", { ascending: false })
       .limit(20),
+    getPendingCounts(ctx.facility.id),
   ]);
   const closed = (closedRes.data ?? []) as unknown as { id: string; destination_label: string; number: number; total: number; closed_at: string; pos_payments: { fiscal_status: string }[] }[];
   const sorted = [...orders].sort((a, b) => Number(b.paid > 0) - Number(a.paid > 0) || a.opened_at.localeCompare(b.opened_at));
@@ -29,7 +30,7 @@ export default async function CassaPage() {
 
   return (
     <div>
-      <LiveRefresh tables={["pos_orders", "pos_payments", "pos_cash_sessions"]} facilityId={ctx.facility.id} />
+      <LiveRefresh tables={["pos_orders", "pos_payments", "pos_cash_sessions", "portal_submissions"]} facilityId={ctx.facility.id} />
       <PageHeader
         title="Cassa"
         subtitle={`${orders.length} conti aperti · ${formatEur(openTotal)}`}
@@ -55,7 +56,15 @@ export default async function CassaPage() {
           sorted.map((o) => (
             <Row key={o.id} href={`/servizio/cassa/${o.id}`} className="min-h-16">
               <div className="min-w-0 flex-1">
-                <p className="font-bold text-night">{o.destination_label}</p>
+                <p className="flex flex-wrap items-center gap-1.5 font-bold text-night">
+                  {o.destination_label}
+                  {o.source === "portale" && <Badge tone="teal">Online</Badge>}
+                </p>
+                {(pending.get(o.id) ?? 0) > 0 && (
+                  <p className="text-sm font-bold text-teal-deep">
+                    {pending.get(o.id) === 1 ? "1 riga online da confermare" : `${pending.get(o.id)} righe online da confermare`}
+                  </p>
+                )}
                 <p className="text-sm text-muted">
                   #{o.number} · dalle {formatTime(o.opened_at, tz)}
                   {o.covers > 0 ? ` · ${o.covers} coperti` : ""}
@@ -63,7 +72,7 @@ export default async function CassaPage() {
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-night">{formatEur(o.total)}</p>
-                {o.paid > 0 && (o.paid >= o.total && o.total > 0 ? <Badge tone="ok">Saldato, da chiudere</Badge> : <Badge tone="warn">Pagato {formatEur(o.paid)}</Badge>)}
+                {o.paid > 0 && (o.paid >= o.total && o.total > 0 && !pending.get(o.id) ? <Badge tone="ok">Saldato, da chiudere</Badge> : <Badge tone="warn">Pagato {formatEur(o.paid)}</Badge>)}
               </div>
             </Row>
           ))

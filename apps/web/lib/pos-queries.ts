@@ -30,6 +30,8 @@ export interface PosOrder {
   paid: number;
   opened_at: string;
   closed_at: string | null;
+  source: string;
+  customer_id: string | null;
 }
 
 export interface PosLine {
@@ -53,6 +55,8 @@ export interface PosLine {
   served_at: string | null;
   void_reason: string | null;
   paid_payment_id: string | null;
+  source: string;
+  portal_submission_id: string | null;
 }
 
 export interface MenuItemLite {
@@ -76,9 +80,9 @@ export interface PrepStation {
 }
 
 export const ORDER_COLS =
-  "id, service_point_id, destination_kind, destination_label, number, covers, status, note, subtotal, discount_kind, discount_value, discount_amount, discount_reason, total, paid, opened_at, closed_at";
+  "id, service_point_id, destination_kind, destination_label, number, covers, status, note, subtotal, discount_kind, discount_value, discount_amount, discount_reason, total, paid, opened_at, closed_at, source, customer_id";
 export const LINE_COLS =
-  "id, order_id, menu_item_id, prep_station_id, name, unit_price, vat_rate, qty, course, notes, without, allergy, allergy_note, status, sent_at, started_at, ready_at, served_at, void_reason, paid_payment_id";
+  "id, order_id, menu_item_id, prep_station_id, name, unit_price, vat_rate, qty, course, notes, without, allergy, allergy_note, status, sent_at, started_at, ready_at, served_at, void_reason, paid_payment_id, source, portal_submission_id";
 
 const n = (v: unknown) => Number(v ?? 0);
 
@@ -186,6 +190,7 @@ export async function getOpenCashSession(facilityId: string) {
 }
 
 export const LINE_STATUS_LABEL: Record<string, { label: string; tone: "neutral" | "teal" | "warn" | "danger" | "ok" | "night" }> = {
+  da_confermare: { label: "Online · da confermare", tone: "night" },
   inviata: { label: "Inviata", tone: "warn" },
   in_preparazione: { label: "In preparazione", tone: "teal" },
   pronta: { label: "Pronta", tone: "ok" },
@@ -194,3 +199,38 @@ export const LINE_STATUS_LABEL: Record<string, { label: string; tone: "neutral" 
 };
 
 export const PAYMENT_METHOD_LABEL: Record<string, string> = { contanti: "Contanti", carta: "Carta", altro: "Altro" };
+
+/** Righe confermate: quelle che contano nel conto, in produzione e nei pagamenti. */
+export const isConfirmed = (l: Pick<PosLine, "status">) => l.status !== "annullata" && l.status !== "da_confermare";
+
+/** Righe online in attesa di conferma, per comanda (sala e cassa). */
+export async function getPendingCounts(facilityId: string): Promise<Map<string, number>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("pos_order_lines").select("order_id, qty").eq("facility_id", facilityId).eq("status", "da_confermare").limit(1000);
+  const m = new Map<string, number>();
+  for (const l of data ?? []) m.set(l.order_id, (m.get(l.order_id) ?? 0) + 1);
+  return m;
+}
+
+export interface PortalSubmission {
+  id: string;
+  order_id: string;
+  guest_name: string | null;
+  notes: string | null;
+  allergies: string | null;
+  lang: string;
+  total: number;
+  status: string;
+  reject_reason: string | null;
+  created_at: string;
+}
+
+export async function getSubmissions(orderId: string): Promise<PortalSubmission[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("portal_submissions")
+    .select("id, order_id, guest_name, notes, allergies, lang, total, status, reject_reason, created_at")
+    .eq("order_id", orderId)
+    .order("created_at");
+  return (data ?? []).map((x) => ({ ...x, total: n(x.total) })) as PortalSubmission[];
+}

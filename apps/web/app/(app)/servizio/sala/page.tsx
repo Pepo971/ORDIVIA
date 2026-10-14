@@ -4,7 +4,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { Card, CardHeader, EmptyState, LinkButton, Notice, PageHeader, cx } from "@/components/ui";
 import { can, requirePerm } from "@/lib/context";
 import { formatEur } from "@/lib/format";
-import { getActiveLines, getOpenOrders, getServicePoints, type PosOrder } from "@/lib/pos-queries";
+import { getActiveLines, getOpenOrders, getPendingCounts, getServicePoints, type PosOrder } from "@/lib/pos-queries";
 
 export const metadata = { title: "Sala e comande" };
 export const dynamic = "force-dynamic";
@@ -12,7 +12,13 @@ export const dynamic = "force-dynamic";
 export default async function SalaPage({ searchParams }: { searchParams: Promise<{ tipo?: string; annullata?: string }> }) {
   const ctx = await requirePerm("pos.operate");
   const sp = await searchParams;
-  const [points, orders, active] = await Promise.all([getServicePoints(ctx.facility.id), getOpenOrders(ctx.facility.id), getActiveLines(ctx.facility.id)]);
+  const [points, orders, active, pending] = await Promise.all([
+    getServicePoints(ctx.facility.id),
+    getOpenOrders(ctx.facility.id),
+    getActiveLines(ctx.facility.id),
+    getPendingCounts(ctx.facility.id),
+  ]);
+  const pendingTotal = [...pending.values()].reduce((s, v) => s + v, 0);
   const now = new Date();
 
   const byPoint = new Map(orders.filter((o) => o.service_point_id).map((o) => [o.service_point_id!, o]));
@@ -32,13 +38,20 @@ export default async function SalaPage({ searchParams }: { searchParams: Promise
 
   return (
     <div>
-      <LiveRefresh tables={["pos_orders", "pos_order_lines"]} facilityId={ctx.facility.id} />
+      <LiveRefresh tables={["pos_orders", "pos_order_lines", "portal_submissions"]} facilityId={ctx.facility.id} />
       <PageHeader
         title="Sala e comande"
         subtitle={`${orders.length} ${orders.length === 1 ? "comanda aperta" : "comande aperte"}`}
         action={canManage ? <LinkButton href="/servizio/sala/tavoli" variant="secondary">Tavoli e zone</LinkButton> : undefined}
       />
       {sp.annullata && <div className="mb-4"><Notice tone="ok">Comanda annullata.</Notice></div>}
+      {pendingTotal > 0 && (
+        <div className="mb-4">
+          <Notice tone="night">
+            {pendingTotal === 1 ? "1 riga online da confermare" : `${pendingTotal} righe online da confermare`}: apri le comande con il bollino «Online».
+          </Notice>
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-2">
         <LinkButton href="/servizio/sala/nuova?tipo=banco" variant="secondary" className="min-h-14 text-base">+ Banco</LinkButton>
@@ -50,7 +63,7 @@ export default async function SalaPage({ searchParams }: { searchParams: Promise
           <CardHeader title="Banco e asporto" />
           <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3">
             {loose.map((o) => (
-              <OrderTile key={o.id} order={o} label={o.destination_label} ready={readyByOrder.get(o.id) ?? 0} now={now} />
+              <OrderTile key={o.id} order={o} label={o.destination_label} ready={readyByOrder.get(o.id) ?? 0} pending={pending.get(o.id) ?? 0} now={now} />
             ))}
           </div>
         </Card>
@@ -91,7 +104,7 @@ export default async function SalaPage({ searchParams }: { searchParams: Promise
               {list.map((p) => {
                 const o = byPoint.get(p.id);
                 return o ? (
-                  <OrderTile key={p.id} order={o} label={p.label} ready={readyByOrder.get(o.id) ?? 0} now={now} />
+                  <OrderTile key={p.id} order={o} label={p.label} ready={readyByOrder.get(o.id) ?? 0} pending={pending.get(o.id) ?? 0} now={now} />
                 ) : (
                   <Link
                     key={p.id}
@@ -111,7 +124,7 @@ export default async function SalaPage({ searchParams }: { searchParams: Promise
   );
 }
 
-function OrderTile({ order, label, ready, now }: { order: PosOrder; label: string; ready: number; now: Date }) {
+function OrderTile({ order, label, ready, pending, now }: { order: PosOrder; label: string; ready: number; pending: number; now: Date }) {
   const age = ticketAge(order.opened_at, now, { warn: 60, late: 120 });
   return (
     <Link
@@ -128,6 +141,11 @@ function OrderTile({ order, label, ready, now }: { order: PosOrder; label: strin
       </span>
       <span className="text-[0.7rem] opacity-70">{age.label}</span>
       {ready > 0 && <span className="absolute -top-1.5 -right-1.5 rounded-full bg-warn px-2 text-xs font-bold text-white">{ready} pronti</span>}
+      {(pending > 0 || order.source === "portale") && (
+        <span className={cx("absolute -top-1.5 -left-1.5 rounded-full px-2 text-xs font-bold", pending > 0 ? "animate-pulse bg-teal text-white" : "bg-teal-soft text-teal-deep")}>
+          Online{pending > 0 ? ` · ${pending}` : ""}
+        </span>
+      )}
     </Link>
   );
 }

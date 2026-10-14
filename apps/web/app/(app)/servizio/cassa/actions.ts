@@ -145,3 +145,18 @@ export async function closeCashSession(_: ActionState, data: FormData): Promise<
   revalidatePath("/servizio/cassa", "layout");
   redirect(`/servizio/cassa/turno?chiuso=${(s as { id: string }).id}`);
 }
+
+// ---------------------------------------------------------------------------
+// Cliente CRM collegato al conto
+// ---------------------------------------------------------------------------
+export async function linkCustomer(_: ActionState, data: FormData): Promise<ActionState> {
+  const order = uuid.safeParse(data.get("order_id"));
+  const raw = data.get("customer_id");
+  const customer = raw === "" || raw == null ? { success: true as const, data: null } : uuid.safeParse(raw);
+  if (!order.success || !customer.success) return { error: "Cliente non valido" };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("pos_set_order_customer", { p_order: order.data, p_customer: customer.data });
+  if (error) return { error: humanError(error) };
+  revalidatePath(`/servizio/cassa/${order.data}`);
+  redirect(`/servizio/cassa/${order.data}`);
+}

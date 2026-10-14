@@ -3,6 +3,7 @@ import { deadlineUrgency, rankToday, todayScore, zonedTimeToUtc, type TodayItem 
 import { Badge, Card, cx, EmptyState, Notice } from "@/components/ui";
 import { can, getContext } from "@/lib/context";
 import { formatDate, formatTime, relativeFromNow } from "@/lib/format";
+import { getTopInsights } from "@/lib/analytics-queries";
 import { bestOfferByProduct, getOffers, getStock, getSuppliers, supplierWindow, today } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/server";
 
@@ -20,6 +21,8 @@ const KIND_LABEL: Record<TodayItem["kind"], string> = {
   attivita_da_verificare: "Verifica",
   haccp: "HACCP",
   richiesta_personale: "Personale",
+  richiesta_ospite: "Ospiti",
+  manutenzione: "Manutenzione",
 };
 
 export default async function OggiPage({ searchParams }: { searchParams: Promise<{ benvenuto?: string; negato?: string }> }) {
@@ -192,6 +195,55 @@ export default async function OggiPage({ searchParams }: { searchParams: Promise
     if ((offered ?? 0) > 0) items.push({ id: "swap-offer", kind: "richiesta_personale", title: `Un collega ti offre ${offered === 1 ? "un turno" : `${offered} turni`}`, href: "/lavoro/richieste" });
   }
 
+  // --- Ospiti: richieste nuove dal portale o dallo staff ---
+  if (can(ctx, "reservations.manage", "rooms.operate", "rooms.manage", "pos.operate", "beach.operate", "maintenance.manage")) {
+    const { data: reqs } = await supabase
+      .from("guest_requests")
+      .select("id, category, message, created_at")
+      .eq("facility_id", ctx.facility.id)
+      .eq("status", "nuova")
+      .order("created_at")
+      .limit(20);
+    const list = (reqs ?? []) as { id: string; category: string; message: string; created_at: string }[];
+    if (list.length > 0) {
+      items.push({
+        id: "guest-req",
+        kind: "richiesta_ospite",
+        title: `${list.length} ${list.length === 1 ? "richiesta" : "richieste"} degli ospiti da prendere in carico`,
+        detail: list.slice(0, 3).map((r) => r.message.slice(0, 40)).join(" · "),
+        href: "/ospiti/richieste",
+        weight: list.length,
+        // la più vecchia in attesa da più di 15 minuti diventa urgente
+        deadline: new Date(new Date(list[0]!.created_at).getTime() + 15 * 60_000),
+      });
+    }
+  }
+
+  // --- Manutenzione: interventi urgenti o ad alta priorità ancora aperti ---
+  if (can(ctx, "maintenance.manage")) {
+    const { data: tickets } = await supabase
+      .from("maintenance_tickets")
+      .select("id, description, priority")
+      .eq("facility_id", ctx.facility.id)
+      .in("priority", ["alta", "urgente"])
+      .in("status", ["aperto", "assegnato", "in_corso", "in_attesa_ricambi"])
+      .limit(20);
+    const t = (tickets ?? []) as { id: string; description: string; priority: string }[];
+    if (t.length > 0) {
+      const urgent = t.filter((x) => x.priority === "urgente").length;
+      items.push({
+        id: "maint",
+        kind: "manutenzione",
+        title: `${t.length} interventi di manutenzione aperti${urgent ? ` (${urgent} urgenti)` : ""}`,
+        detail: t.slice(0, 3).map((x) => x.description.slice(0, 40)).join(" · "),
+        href: "/servizio/manutenzione",
+        weight: urgent * 3 + t.length,
+      });
+    }
+  }
+
+  const insights = await getTopInsights(ctx, 3);
+
   const ranked = rankToday(items, now);
   const now_ = ranked.filter((i) => todayScore(i, now) >= 80);
   const rest = ranked.filter((i) => todayScore(i, now) < 80);
@@ -218,6 +270,23 @@ export default async function OggiPage({ searchParams }: { searchParams: Promise
       {sp.benvenuto && <div className="mb-4"><Notice>Struttura creata. Reparti e magazzini sono pronti: completa i primi passi qui sotto.</Notice></div>}
 
       {setupNeeded && <SetupSteps />}
+
+      {insights.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-sm font-extrabold tracking-wide text-muted uppercase">Suggerimenti dell’assistente</h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {insights.map((i) => (
+              <Link key={i.key} href={i.action.href} className="rounded-[var(--radius-card)] border border-sand-deep bg-white p-4 hover:border-teal">
+                <Badge tone={i.severity === "alta" ? "danger" : i.severity === "media" ? "warn" : "teal"}>{i.severity}</Badge>
+                <span className="mt-2 block font-bold text-night">{i.title}</span>
+                <span className="mt-1 block text-sm text-muted">{i.impact}</span>
+                <span className="mt-2 block text-sm font-bold text-teal-deep">{i.action.label} →</span>
+              </Link>
+            ))}
+          </div>
+          <Link href="/numeri/assistente" className="mt-2 inline-block text-sm font-bold text-teal-deep">Tutti i suggerimenti, con dati e motivazioni</Link>
+        </section>
+      )}
 
       {now_.length > 0 && <Section title="Adesso" items={now_} tz={tz} now={now} urgent />}
       {rest.length > 0 && <Section title="Oggi" items={rest} tz={tz} now={now} />}
