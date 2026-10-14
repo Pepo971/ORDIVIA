@@ -6,3 +6,7 @@ export * from "./menu";
 export * from "./pos";
 export * from "./beach";
 export * from "./shifts";
+export * from "./reservations";
+export * from "./portal";
+export * from "./rooms";
+export * from "./insights";

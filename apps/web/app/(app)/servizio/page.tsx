@@ -8,6 +8,8 @@ export default async function ServizioIndex() {
   if (can(ctx, "beach.operate", "beach.manage")) redirect("/servizio/spiaggia");
   if (can(ctx, "pos.supervise")) redirect("/servizio/cassa");
   if (can(ctx, "menu.manage")) redirect("/servizio/menu");
+  if (can(ctx, "rooms.operate", "rooms.manage")) redirect("/servizio/camere");
   if (can(ctx, "haccp.record")) redirect("/servizio/menu/haccp");
+  if (can(ctx, "maintenance.report", "maintenance.manage")) redirect("/servizio/manutenzione");
   redirect("/oggi?negato=1");
 }

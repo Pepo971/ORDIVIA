@@ -7,6 +7,8 @@ import { cx } from "./ui";
 const ICONS: Record<string, React.ReactNode> = {
   oggi: <path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />,
   servizio: <path d="M4 18h16M5 18a7 7 0 0 1 14 0M12 8V6m-1.5 0h3" />,
+  ospiti: <path d="M16 19v-1a4 4 0 0 0-8 0v1M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm6 8v-1a3 3 0 0 0-2-2.8M17 5.2a3 3 0 0 1 0 5.6" />,
+  numeri: <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />,
   lavoro: <path d="M9 11.5 11 13.5 15.5 9M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" />,
   acquisti: <path d="M3 4h2l2.4 11h10.2L20 8H6.2M10 20a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" />,
   scorte: <path d="M4 8 12 4l8 4v8l-8 4-8-4V8Zm0 0 8 4m0 0 8-4m-8 4v8" />,

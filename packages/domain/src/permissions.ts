@@ -27,6 +27,15 @@ export const PERMISSIONS = [
   "shifts.manage",
   "shifts.view",
   "haccp.record",
+  "reservations.manage",
+  "crm.view",
+  "crm.manage",
+  "portal.manage",
+  "rooms.operate",
+  "rooms.manage",
+  "maintenance.report",
+  "maintenance.manage",
+  "analytics.view",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -41,10 +50,12 @@ export interface NavItem {
 /** Navigazione per ruolo, generata dai permessi: un operativo vede 3–4 voci, il titolare tutte. */
 export const NAV: NavItem[] = [
   { key: "oggi", label: "Oggi", href: "/oggi", anyOf: ["tasks.perform", "tasks.manage", "purchasing.approve", "receiving.perform"] },
-  { key: "servizio", label: "Servizio", href: "/servizio", anyOf: ["pos.operate", "pos.kitchen", "pos.supervise", "beach.operate", "beach.manage", "menu.manage", "haccp.record"] },
+  { key: "servizio", label: "Servizio", href: "/servizio", anyOf: ["pos.operate", "pos.kitchen", "pos.supervise", "beach.operate", "beach.manage", "menu.manage", "haccp.record", "rooms.operate", "rooms.manage", "maintenance.report", "maintenance.manage"] },
+  { key: "ospiti", label: "Ospiti", href: "/ospiti", anyOf: ["reservations.manage", "crm.view", "crm.manage", "portal.manage"] },
   { key: "lavoro", label: "Lavoro", href: "/lavoro", anyOf: ["tasks.perform", "tasks.manage", "shifts.view", "shifts.manage"] },
   { key: "acquisti", label: "Acquisti", href: "/acquisti", anyOf: ["purchasing.request", "purchasing.approve", "suppliers.manage", "receiving.perform"] },
   { key: "scorte", label: "Scorte", href: "/scorte", anyOf: ["inventory.view"] },
+  { key: "numeri", label: "Numeri", href: "/numeri", anyOf: ["analytics.view", "finance.view"] },
   { key: "gestione", label: "Gestione", href: "/gestione", anyOf: ["org.manage", "members.manage", "audit.view"] },
 ];
 
